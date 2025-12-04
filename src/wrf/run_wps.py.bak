@@ -1,0 +1,156 @@
+# src/wrf/scheduler/run_wps.py
+import os
+import logging
+import sys
+from datetime import datetime
+import os
+import subprocess
+from datetime import datetime, timedelta, timezone
+import logging
+
+# =============================
+# 日志系统初始化
+# =============================
+log_dir = "/home/projects/logs"
+os.makedirs(log_dir, exist_ok=True)  # 如果目录不存在则创建
+log_path = os.path.join(log_dir, "run_wps.log")
+
+# 设置日志格式与输出（同时输出到文件和控制台）
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_path, mode='a'),     # 输出到文件
+        # logging.StreamHandler(sys.stdout)            # 输出到终端
+    ]
+)
+logger = logging.getLogger(__name__)  # 获取日志实例
+
+# =============================
+# 目录与文件路径配置
+# =============================
+WPS_DIR = "/WRF/Product_WRF/WPS"                     # WPS 程序目录
+GFS_DIR = "/WRF/Product_WRF/GFS_DATA"                # GFS 数据目录
+NAMELIST_PATH = os.path.join(WPS_DIR, "namelist.wps")  # namelist.wps 文件路径
+
+
+# =============================
+# 工具函数：运行 Shell 命令
+# =============================
+def run_shell(cmd, cwd=None):
+    """
+    执行一个 shell 命令（可选指定工作目录），并捕获日志与异常。
+    """
+    logger.info(f"▶️ 执行命令: {cmd}")
+    result = subprocess.run(cmd, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    if result.returncode != 0:
+        logger.error(f"❌ 命令失败: {cmd}")
+        logger.error(result.stderr)
+        raise RuntimeError(f"命令执行失败: {cmd}")
+    else:
+        logger.info(result.stdout)
+
+
+# =============================
+# 步骤1：清理旧的 WPS 文件
+# =============================
+def clean_wps_directory():
+    """
+    删除 WPS 目录中旧的中间文件，保持环境干净。
+    """
+    logger.info("🧹 清理旧的 WPS 文件...")
+    patterns = [
+        "GRIBFILE.AA*",
+        "met_em.d01.*",
+        "geo_em.d01.nc",
+        "FILE:202*"
+    ]
+    for pattern in patterns:
+        run_shell(f"rm -f {pattern}", cwd=WPS_DIR)
+
+
+# =============================
+# 步骤2：链接 GFS 数据
+# =============================
+def link_grib_files(forecast_date):
+    """
+    链接当前日期的 GFS 数据，调用 link_grib.csh 脚本。
+    """
+    folder_name = f"gfs_{forecast_date}_00z"
+    grib_path = os.path.join(GFS_DIR, folder_name, "gfs.t00z.pgrb2.0p25.f0*")
+    link_script = "./link_grib.csh"
+    run_shell(f"{link_script} {grib_path}", cwd=WPS_DIR)
+
+
+# =============================
+# 步骤3：修改 namelist.wps 起止时间
+# =============================
+def update_namelist(start_date, end_date):
+    """
+    修改 namelist.wps 文件中的 start_date 和 end_date 字段。
+    """
+    logger.info("📝 修改 namelist.wps 中的起止日期...")
+
+    with open(NAMELIST_PATH, "r") as f:
+        lines = f.readlines()
+
+    def replace_line(key, new_value):
+        """
+        在 namelist.wps 中找到 key 开头的行，并替换为新值。
+        """
+        for i, line in enumerate(lines):
+            if line.strip().startswith(key):
+                lines[i] = f" {key} = '{new_value}'\n"
+                return
+        raise ValueError(f"{key} not found in namelist")
+
+    replace_line("start_date", f"{start_date}_00:00:00")
+    replace_line("end_date", f"{end_date}_00:00:00")
+
+    with open(NAMELIST_PATH, "w") as f:
+        f.writelines(lines)
+
+    logger.info(f"✅ namelist.wps 已更新为 {start_date} -> {end_date}")
+
+
+# =============================
+# 步骤4：运行 WPS 三个核心程序
+# =============================
+def run_wps_programs():
+    """
+    执行 WPS 的三个阶段性程序：ungrib, geogrid, metgrid。
+    """
+    logger.info("🚀 开始执行 WPS 三个程序...")
+    for exe in ["ungrib.exe", "geogrid.exe", "metgrid.exe"]:
+        run_shell(f"./{exe}", cwd=WPS_DIR)
+
+
+# =============================
+# 主流程函数：调用以上步骤
+# =============================
+def run():
+    """
+    调用全流程：清理目录 → 链接数据 → 修改参数文件 → 执行程序。
+    """
+    logger.info("🏁 开始 WPS 流程任务")
+    # 设置 UTC+8 时区
+    CHINA_TZ = timezone(timedelta(hours=8))
+    today = datetime.now(CHINA_TZ).date()
+    forecast_date = today.strftime("%Y%m%d")         # 用于目录名
+    start_date = today.strftime("%Y-%m-%d")           # namelist 开始时间
+    end_date = (today + timedelta(days=4)).strftime("%Y-%m-%d")  # 结束时间：+4 天
+
+    clean_wps_directory()
+    link_grib_files(forecast_date)
+    update_namelist(start_date, end_date)
+    run_wps_programs()
+
+    logger.info("🎉 WPS 流程完成")
+
+
+# =============================
+# 入口函数
+# =============================
+if __name__ == "__main__":
+    run()

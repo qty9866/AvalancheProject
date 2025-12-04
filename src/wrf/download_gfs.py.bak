@@ -1,0 +1,101 @@
+# src/wrf/scheduler/download_gfs.py
+import os
+import requests
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
+import sys
+from datetime import datetime
+
+# === 日志设置 ===
+log_dir = "/home/projects/logs"
+os.makedirs(log_dir, exist_ok=True)
+log_path = os.path.join(log_dir, "download_gfs.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_path, mode='a'),  # 改为追加写入
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# === 主执行函数 ===
+def run():
+    logger.info("🚀 启动 GFS 数据下载任务...")
+
+    # 自动获取今天日期
+    forecast_date = datetime.utcnow().strftime('%Y%m%d')
+    forecast_cycle = "00"
+    forecast_hours = range(0, 97, 6)
+
+    # 下载地址设置
+    base_url = f"https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{forecast_date}/{forecast_cycle}/atmos"
+
+    # 目标保存目录
+    gfs_base_dir = "/WRF/Product_WRF/GFS_DATA"
+    save_dir = os.path.join(gfs_base_dir, f"gfs_{forecast_date}_{forecast_cycle}z")
+    os.makedirs(save_dir, exist_ok=True)
+    logger.info(f"📁 GFS 数据将保存至: {save_dir}")
+
+    def download_file(hour):
+        forecast_hour = f"{hour:03d}"
+        file_name = f"gfs.t{forecast_cycle}z.pgrb2.0p25.f{forecast_hour}"
+        file_url = f"{base_url}/{file_name}"
+        save_path = os.path.join(save_dir, file_name)
+
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.warning(f"第{attempt}次重试下载 {file_name}...")
+                response = requests.get(file_url, stream=True)
+
+                if response.status_code == 200:
+                    total_size = int(response.headers.get('content-length', 0))
+                    with open(save_path, 'wb') as f, tqdm(
+                        desc=file_name,
+                        total=total_size,
+                        unit='B',
+                        unit_scale=True,
+                        unit_divisor=1024,
+                    ) as bar:
+                        for chunk in response.iter_content(chunk_size=1024):
+                            if chunk:
+                                f.write(chunk)
+                                bar.update(len(chunk))
+                    logger.info(f"✅ 下载完成: {file_name}")
+                    return
+                else:
+                    logger.error(f"下载失败: {file_name}, 状态码: {response.status_code}")
+                    if attempt == max_retries - 1:
+                        raise Exception(f"HTTP错误: 状态码 {response.status_code}")
+            except Exception as e:
+                logger.error(f"下载异常: {file_name}, 错误: {str(e)}, 尝试次数: {attempt+1}")
+                if attempt == max_retries - 1:
+                    raise Exception(f"最终失败: {str(e)}")
+
+        raise Exception(f"文件 {file_name} 超过最大重试次数 {max_retries}")
+
+    # 多线程并发下载
+    error_files = []
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(download_file, hour) for hour in forecast_hours]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                error_files.append(str(e))
+
+    if error_files:
+        logger.error("❌ 以下文件下载失败:")
+        for error in error_files:
+            logger.error(f"• {error}")
+        raise Exception("GFS 数据下载存在失败文件，请检查日志")
+
+    logger.info("🎉 所有 GFS 文件下载完成！")
+
+
+if __name__ == "__main__":
+    run()

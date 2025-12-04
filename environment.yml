@@ -1,0 +1,12 @@
+name: wrf-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - flask
+  - matplotlib
+  - numpy
+  - netcdf4
+  - ncl
+  - imagemagick
+  - schedule
