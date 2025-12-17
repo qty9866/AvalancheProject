@@ -1,6 +1,6 @@
 begin
   ; 输入文件路径
-  in_files = "/home/projects/data/wrf_output/wrfout_d01_2025-12-03_00:00:00.nc"
+  in_files = "/home/projects/data/wrf_output/wrfout_d01_2025-12-15_00:00:00.nc"
   a = addfile(in_files, "r")
 
   ; 获取时间和经纬度

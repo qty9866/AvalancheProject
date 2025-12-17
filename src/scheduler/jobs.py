@@ -10,11 +10,11 @@ from pytz import timezone
 
 def start_scheduler():
     scheduler = BlockingScheduler(timezone=timezone("Asia/Shanghai"))
+    scheduler.add_job(run_wps, 'cron', hour=3, minute=0)
+    scheduler.add_job(run_wrf, 'cron', hour=3, minute=30)
+    scheduler.add_job(postprocess, 'cron', hour=4, minute=30)
+    scheduler.add_job(run_snowpack, 'cron', hour=4, minute=50)
     scheduler.add_job(gfs_download, 'cron', hour=17, minute=30)
-    scheduler.add_job(run_wps, 'cron', hour=22, minute=0)
-    scheduler.add_job(run_wrf, 'cron', hour=22, minute=20)
-    scheduler.add_job(postprocess, 'cron', hour=23, minute=30)
-    scheduler.add_job(run_snowpack, 'cron', hour=23, minute=50)
 
     print("✅ 定时任务调度器启动中...")
     scheduler.start()

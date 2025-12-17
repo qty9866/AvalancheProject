@@ -118,7 +118,8 @@ def run_wrf_programs():
 def run():
     logger.info("🏁 开始 WRF 模拟流程")
     CHINA_TZ = timezone(timedelta(hours=8))
-    today = datetime.now(CHINA_TZ).date()
+    # today = datetime.now(CHINA_TZ).date()
+    today = (datetime.now(CHINA_TZ) - timedelta(days=1)).date()
     start_date = today
     end_date = today + timedelta(days=4)
 

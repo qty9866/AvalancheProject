@@ -105,7 +105,7 @@ def run_wps_programs():
 def run():
     logger.info("🏁 WPS 流程开始")
     CHINA_TZ = timezone(timedelta(hours=8))
-    today = datetime.now(CHINA_TZ).date()
+    today = (datetime.now(CHINA_TZ) - timedelta(days=1)).date()
     forecast_date = today.strftime("%Y%m%d")
     start_date = today.strftime("%Y-%m-%d")
     end_date = (today + timedelta(days=4)).strftime("%Y-%m-%d")
